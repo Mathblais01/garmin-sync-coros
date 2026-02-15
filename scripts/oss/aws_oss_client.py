@@ -7,7 +7,7 @@ from oss.sts_token_error import StsTokenError
 from utils.coros_oss_credients_utils import decode
 
 class AwsOssClient:
-  def __init__(self, bucket="eu-coros", service="aws", app_id="1660188068672619112", sign="877571111A1EE5316E4B590103D4B5B3", v=2):
+  def __init__(self, bucket="eu-coros", service="aws", app_id="1660188068672619112", sign="E34EF0E34A498A54A9C3EAEFC12B7CAF", v=2):
     self.bucket = bucket
     self.service = service
     self.app_id = app_id

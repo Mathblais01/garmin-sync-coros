@@ -55,6 +55,62 @@ class CorosClient:
         self.teamapi = REGIONCONFIG[self.regionId]['teamapi']
         print(f"COROS login successful - Region: {self.regionId}, API: {self.teamapi}")
 
+    ## 上传运动 (with explicit bucket parameter)
+    def uploadActivityWithBucket(self, oss_object, md5, fileName, size, bucket, serviceName):
+        """Upload activity with explicit bucket and service name."""
+        if self.accessToken == None:
+            self.login()
+
+        upload_url = f"{self.teamapi}/activity/fit/import"
+
+        headers = {
+          "Accept":       "application/json, text/plain, */*",
+          "accesstoken": self.accessToken,
+        }
+     
+        try:
+          data = {"source":1,"timezone":32,"bucket":f"{bucket}","md5":f"{md5}","size":size,"object":f"{oss_object}","serviceName":f"{serviceName}","oriFileName":f"{fileName}"}
+          json_data = json.dumps(data)
+          json_str = str(json_data)
+          print(f"COROS API request: {json_str}")
+          response = self.req.request(
+              method = 'POST',
+              url=upload_url,
+              fields={ "jsonParameter": json_str},
+              headers=headers
+          )
+          upload_response = json.loads(response.data)
+          print(f"COROS API response: {upload_response}")
+          
+          # Check the response
+          if upload_response.get("result") != "0000":
+              print(f"COROS API error: {upload_response.get('message')}")
+              return False
+          
+          status = upload_response.get("data", {}).get("status")
+          
+          # Status codes:
+          # 2 = Success (processing/completed)
+          # -2 = Duplicate or rejected
+          # Other negative = Error
+          
+          if status == 2:
+              print(f"COROS: Activity accepted (status={status})")
+              return True
+          elif status == -2:
+              print(f"COROS: Duplicate activity detected (status={status})")
+              return True  # Treat duplicate as success
+          elif status is not None and status > 0:
+              print(f"COROS: Activity processing (status={status})")
+              return True
+          else:
+              print(f"COROS: Unknown status ({status})")
+              return False
+              
+        except Exception as err:
+            print(f"COROS upload exception: {err}")
+            return False
+
     ## 上传运动
     def uploadActivity(self, oss_object, md5, fileName, size):
         ## 判断Token 是否为空

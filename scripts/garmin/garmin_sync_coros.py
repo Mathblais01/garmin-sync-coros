@@ -242,16 +242,21 @@ if __name__ == "__main__":
     for un_sync_info in file_path_list:
         try:
             client = None
+            upload_bucket = None
+            upload_service = None
+            
             ## 中国区使用阿里云OSS
             if corosClient.regionId == 2:
                 client = AliOssClient()
+                upload_bucket = "coros-oss"
+                upload_service = "aliyun"
             elif corosClient.regionId == 1 or corosClient.regionId == 3:
-                # Use the correct bucket based on region
-                from coros.sts_config import STS_CONFIG
-                bucket = STS_CONFIG[corosClient.regionId]["bucket"]
-                service = STS_CONFIG[corosClient.regionId]["service"]
-                print(f"Using AWS S3 bucket: {bucket} for region {corosClient.regionId}")
-                client = AwsOssClient(bucket=bucket, service=service)
+                # Use eu-coros bucket (this is what works for STS token)
+                # The key is to tell COROS the same bucket we upload to
+                upload_bucket = "eu-coros"
+                upload_service = "aws"
+                print(f"Using AWS S3 bucket: {upload_bucket} for region {corosClient.regionId}")
+                client = AwsOssClient(bucket=upload_bucket, service=upload_service)
             
             file_path = un_sync_info["file_path"]
             un_sync_id = un_sync_info["un_sync_id"]
@@ -266,12 +271,14 @@ if __name__ == "__main__":
             
             size = os.path.getsize(file_path)
             
-            # Tell COROS about the .fit file
-            upload_result = corosClient.uploadActivity(
+            # Tell COROS about the .fit file - use the SAME bucket we uploaded to!
+            upload_result = corosClient.uploadActivityWithBucket(
                 f"fit_zip/{corosClient.userId}/{file_md5}.fit",
                 file_md5,
                 f"{un_sync_id}.fit",
-                size
+                size,
+                upload_bucket,
+                upload_service
             )
             print(f"Activity {un_sync_id}: COROS response: {upload_result}")
             
@@ -279,13 +286,7 @@ if __name__ == "__main__":
                 garmin_db.updateSyncStatus(un_sync_id)
                 print(f"Activity {un_sync_id}: Sync complete!")
             else:
-                print(f"Activity {un_sync_id}: COROS rejected the file (check debug-fit-files folder)")
-                
-            # Don't clean up the fit file - keep for debugging
-            # try:
-            #     os.remove(file_path)
-            # except:
-            #     pass
+                print(f"Activity {un_sync_id}: COROS rejected the file")
                 
         except Exception as err:
             print(f"Activity {un_sync_id}: Upload error - {err}")
@@ -299,41 +300,3 @@ if __name__ == "__main__":
             print(f"  {f}: {os.path.getsize(fpath)} bytes")
 
     print("\nSync process complete!")
-    
-    # List any remaining debug files for git commit
-    debug_dir = "/home/runner/work/garmin-sync-coros/garmin-sync-coros/fit-files-for-testing"
-    if not os.path.exists(debug_dir):
-        os.makedirs(debug_dir)
-    
-    # Copy any FIT files to the testing directory
-    for un_sync_info in file_path_list:
-        try:
-            src_path = un_sync_info["file_path"]
-            if os.path.exists(src_path):
-                import shutil
-                dst_path = os.path.join(debug_dir, os.path.basename(src_path))
-                shutil.copy2(src_path, dst_path)
-                print(f"Saved for testing: {dst_path}")
-        except Exception as e:
-            print(f"Could not save debug file: {e}")
-    
-    print(f"\n=== FIT files saved to: fit-files-for-testing/ ===")
-    print("You can download these and try manual import to COROS")
-    
-    # Output first FIT file as base64 so user can decode and test manually
-    if file_path_list:
-        import base64
-        first_file = file_path_list[0]["file_path"]
-        if os.path.exists(first_file):
-            print(f"\n=== BASE64 ENCODED FIT FILE FOR MANUAL TESTING ===")
-            print(f"File: {os.path.basename(first_file)}")
-            print(f"To decode: Save the base64 text below to a file, then run:")
-            print(f"  python -c \"import base64; open('test.fit','wb').write(base64.b64decode(open('b64.txt').read()))\"")
-            print(f"Or use an online base64 decoder and save as .fit file")
-            print(f"=== START BASE64 ===")
-            with open(first_file, 'rb') as f:
-                b64_data = base64.b64encode(f.read()).decode('ascii')
-                # Print in chunks for readability
-                for i in range(0, len(b64_data), 1000):
-                    print(b64_data[i:i+1000])
-            print(f"=== END BASE64 ===")

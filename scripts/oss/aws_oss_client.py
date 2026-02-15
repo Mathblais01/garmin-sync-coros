@@ -37,8 +37,7 @@ class AwsOssClient:
         if self.bucket == "eu-coros":
             endpoint_url = 'https://s3.eu-central-1.amazonaws.com'
         else:
-            # coros-s3 uses us-east-1 (default AWS region)
-            endpoint_url = 'https://s3.us-east-1.amazonaws.com'
+            endpoint_url = 'https://s3.us-west-1.amazonaws.com'
         
         print(f"AWS OSS: Using endpoint {endpoint_url}")
         

@@ -246,7 +246,12 @@ if __name__ == "__main__":
             if corosClient.regionId == 2:
                 client = AliOssClient()
             elif corosClient.regionId == 1 or corosClient.regionId == 3:
-                client = AwsOssClient()
+                # Use the correct bucket based on region
+                from coros.sts_config import STS_CONFIG
+                bucket = STS_CONFIG[corosClient.regionId]["bucket"]
+                service = STS_CONFIG[corosClient.regionId]["service"]
+                print(f"Using AWS S3 bucket: {bucket} for region {corosClient.regionId}")
+                client = AwsOssClient(bucket=bucket, service=service)
             
             file_path = un_sync_info["file_path"]
             un_sync_id = un_sync_info["un_sync_id"]

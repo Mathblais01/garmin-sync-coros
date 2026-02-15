@@ -2,15 +2,15 @@ import urllib3
 import json
 import hashlib
 import os
-import io
 
 import certifi
 
 from coros.region_config import REGIONCONFIG
 from coros.sts_config import STS_CONFIG
 
+
 class CorosClient:
-    
+
     def __init__(self, email, password) -> None:
         self.email = email
         self.password = password
@@ -20,7 +20,7 @@ class CorosClient:
         self.regionId = None
         self.teamapi = None
         self.trainingHub = None
-    
+
     def login(self):
         """Login to COROS and get access token."""
         login_url = "https://teamcnapi.coros.com/account/login"
@@ -53,74 +53,24 @@ class CorosClient:
         print(f"  Team API: {self.teamapi}")
         print(f"  Training Hub: {self.trainingHub}")
 
-    def directUploadFit(self, file_path):
+    def uploadActivity(self, oss_object, md5, fileName, size):
         """
-        Upload a FIT file directly to COROS Training Hub.
-        This bypasses S3 and uploads directly like the web interface does.
+        Register an uploaded file with COROS.
+        The file must already be uploaded to S3/OSS before calling this.
+        
+        Args:
+            oss_object: The S3/OSS object path (e.g., "fit_zip/userId/md5.zip")
+            md5: MD5 hash of the file
+            fileName: Original filename (e.g., "activityId.zip")
+            size: File size in bytes
         """
         if self.accessToken is None:
             self.login()
 
-        file_name = os.path.basename(file_path)
-        file_size = os.path.getsize(file_path)
-        
-        with open(file_path, 'rb') as f:
-            file_data = f.read()
-        
-        file_md5 = hashlib.md5(file_data).hexdigest()
-        
-        print(f"Direct upload: {file_name} ({file_size} bytes)")
-
-        # COROS Training Hub upload endpoint
-        # This is the endpoint used by t.coros.com "Import Data" feature
-        upload_url = f"{self.teamapi}/activity/import"
-        
-        headers = {
-            "Accept": "application/json, text/plain, */*",
-            "accesstoken": self.accessToken,
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        }
-
-        try:
-            # Multipart form upload
-            response = self.req.request(
-                method='POST',
-                url=upload_url,
-                headers=headers,
-                fields={
-                    'file': (file_name, file_data, 'application/octet-stream'),
-                }
-            )
-            
-            print(f"Response status: {response.status}")
-            
-            if response.status == 200:
-                try:
-                    result = json.loads(response.data)
-                    print(f"Response: {result}")
-                    
-                    if result.get("result") == "0000":
-                        print("COROS: Upload accepted!")
-                        return True
-                    else:
-                        print(f"COROS: Upload rejected - {result.get('message', 'Unknown')}")
-                        return False
-                except:
-                    print(f"Response body: {response.data[:500]}")
-                    return False
-            else:
-                print(f"HTTP error: {response.status}")
-                print(f"Response: {response.data[:500]}")
-                return False
-                
-        except Exception as e:
-            print(f"Upload error: {e}")
-            return False
-
-    def uploadActivityWithBucket(self, oss_object, md5, fileName, size, bucket, serviceName):
-        """Original S3-based upload method (kept for compatibility)."""
-        if self.accessToken is None:
-            self.login()
+        # Get bucket and service name from STS config for this region
+        sts_cfg = STS_CONFIG.get(self.regionId, STS_CONFIG.get(1))
+        bucket = sts_cfg['bucket']
+        serviceName = sts_cfg['service']
 
         upload_url = f"{self.teamapi}/activity/fit/import"
 
@@ -128,7 +78,7 @@ class CorosClient:
             "Accept": "application/json, text/plain, */*",
             "accesstoken": self.accessToken,
         }
-     
+
         try:
             data = {
                 "source": 1,
@@ -141,8 +91,8 @@ class CorosClient:
                 "oriFileName": fileName
             }
             json_str = json.dumps(data)
-            print(f"S3 upload request: {json_str}")
-            
+            print(f"COROS import request: {json_str}")
+
             response = self.req.request(
                 method='POST',
                 url=upload_url,
@@ -150,18 +100,20 @@ class CorosClient:
                 headers=headers
             )
             upload_response = json.loads(response.data)
-            print(f"S3 upload response: {upload_response}")
-            
+            print(f"COROS import response: {upload_response}")
+
             if upload_response.get("result") != "0000":
+                print(f"COROS import failed: {upload_response.get('message', 'Unknown')}")
                 return False
-            
+
             status = upload_response.get("data", {}).get("status")
-            if status == 2 or status == -2:  # Success or duplicate
+            # status 2 = success, -2 = duplicate (already exists)
+            if status == 2 or status == -2:
                 return True
             return status is not None and status > 0
-                
+
         except Exception as err:
-            print(f"S3 upload exception: {err}")
+            print(f"COROS import exception: {err}")
             return False
 
     def getActivities(self, size: int, page: int):
@@ -178,7 +130,7 @@ class CorosClient:
             print(f"getActivities error: {err}")
             return None
 
-    def getAllActivities(self): 
+    def getAllActivities(self):
         all_activities = []
         size = 200
         page = 1

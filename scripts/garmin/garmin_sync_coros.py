@@ -65,9 +65,9 @@ if __name__ == "__main__":
 
     # --- ACTIVITY TYPE FILTER ---
     # To sync ALL activity types, use this line:
-    ALLOWED_TYPES = None
+    # ALLOWED_TYPES = None
     # To sync ONLY cycling, comment the line above and uncomment this one:
-    # ALLOWED_TYPES = ["cycling", "indoor_cycling", "virtual_ride", "gravel_cycling", "mountain_biking", "road_biking", "e_bike_mountain", "e_bike_fitness"]
+    ALLOWED_TYPES = ["cycling", "indoor_cycling", "virtual_ride", "gravel_cycling", "mountain_biking", "road_biking", "e_bike_mountain", "e_bike_fitness"]
     
     for activity in all_activities:
         activity_id = activity["activityId"]

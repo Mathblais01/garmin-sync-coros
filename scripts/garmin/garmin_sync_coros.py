@@ -63,9 +63,22 @@ if __name__ == "__main__":
 
     print(f"Found {len(all_activities)} activities")
 
+    # --- ACTIVITY TYPE FILTER ---
+    # To sync ALL activity types, use this line:
+    ALLOWED_TYPES = None
+    # To sync ONLY cycling, comment the line above and uncomment this one:
+    # ALLOWED_TYPES = ["cycling", "indoor_cycling", "virtual_ride", "gravel_cycling", "mountain_biking", "road_biking", "e_bike_mountain", "e_bike_fitness"]
+    
     for activity in all_activities:
         activity_id = activity["activityId"]
-        garmin_db.saveActivity(activity_id)
+        activity_type = activity.get("activityType", {}).get("typeKey", "unknown")
+        activity_name = activity.get("activityName", "N/A")
+        print(f"Activity {activity_id}: type={activity_type}, name={activity_name}")
+    
+        if ALLOWED_TYPES is None or activity_type in ALLOWED_TYPES:
+            garmin_db.saveActivity(activity_id)
+        else:
+            print(f"  Skipping ({activity_type} not in allowed types)")
 
     un_sync_id_list = garmin_db.getUnSyncActivity()
     if un_sync_id_list is None or len(un_sync_id_list) == 0:

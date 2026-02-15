@@ -1,6 +1,4 @@
 import logging
-import io
-import zipfile
 import os
 from enum import Enum, auto
 import requests
@@ -77,27 +75,11 @@ class GarminClient:
         return all_activities
       start += limit
 
-  ## 下载原始格式的运动 (Fixed to extract FIT from ZIP)
+  ## 下载原始格式的运动
   def downloadFitActivity(self, activity):
     download_fit_activity_url_prefix = GARMIN_URL_DICT["garmin_connect_fit_download"]
     download_fit_activity_url = f"{download_fit_activity_url_prefix}/{activity}"
     response = self.download(download_fit_activity_url)
-    
-    # Garmin returns a ZIP file containing the FIT file
-    # We need to extract the actual FIT data
-    if response and len(response) > 2 and response[:2] == b'PK':
-      try:
-        zip_buffer = io.BytesIO(response)
-        with zipfile.ZipFile(zip_buffer, 'r') as zf:
-          for filename in zf.namelist():
-            if filename.lower().endswith('.fit'):
-              return zf.read(filename)
-          # If no .fit file found, try first file
-          if zf.namelist():
-            return zf.read(zf.namelist()[0])
-      except Exception as e:
-        logger.warning(f"Failed to extract FIT from ZIP: {e}")
-    
     return response
 
   @login  

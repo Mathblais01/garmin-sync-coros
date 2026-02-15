@@ -294,3 +294,41 @@ if __name__ == "__main__":
             print(f"  {f}: {os.path.getsize(fpath)} bytes")
 
     print("\nSync process complete!")
+    
+    # List any remaining debug files for git commit
+    debug_dir = "/home/runner/work/garmin-sync-coros/garmin-sync-coros/fit-files-for-testing"
+    if not os.path.exists(debug_dir):
+        os.makedirs(debug_dir)
+    
+    # Copy any FIT files to the testing directory
+    for un_sync_info in file_path_list:
+        try:
+            src_path = un_sync_info["file_path"]
+            if os.path.exists(src_path):
+                import shutil
+                dst_path = os.path.join(debug_dir, os.path.basename(src_path))
+                shutil.copy2(src_path, dst_path)
+                print(f"Saved for testing: {dst_path}")
+        except Exception as e:
+            print(f"Could not save debug file: {e}")
+    
+    print(f"\n=== FIT files saved to: fit-files-for-testing/ ===")
+    print("You can download these and try manual import to COROS")
+    
+    # Output first FIT file as base64 so user can decode and test manually
+    if file_path_list:
+        import base64
+        first_file = file_path_list[0]["file_path"]
+        if os.path.exists(first_file):
+            print(f"\n=== BASE64 ENCODED FIT FILE FOR MANUAL TESTING ===")
+            print(f"File: {os.path.basename(first_file)}")
+            print(f"To decode: Save the base64 text below to a file, then run:")
+            print(f"  python -c \"import base64; open('test.fit','wb').write(base64.b64decode(open('b64.txt').read()))\"")
+            print(f"Or use an online base64 decoder and save as .fit file")
+            print(f"=== START BASE64 ===")
+            with open(first_file, 'rb') as f:
+                b64_data = base64.b64encode(f.read()).decode('ascii')
+                # Print in chunks for readability
+                for i in range(0, len(b64_data), 1000):
+                    print(b64_data[i:i+1000])
+            print(f"=== END BASE64 ===")

@@ -59,38 +59,25 @@ class GarminClient:
      activities =  self.connectapi(path=GARMIN_URL_DICT["garmin_connect_activities"], params=params)
      return activities;
 
-  # ## 获取所有运动
-  # def getAllActivities(self): 
-  #   all_activities = []
-  #   start = 0
-  #   limit=100
-  #   if 0 < self.newestNum < 100:
-  #     limit = self.newestNum
-      
-  #   while(True):
-  #     activities = self.getActivities(start=start, limit=limit)
-  #     if len(activities) > 0:
-  #       all_activities.extend(activities)
-        
-  #       if 0 < self.newestNum < 100 or start > self.newestNum:
-  #          return all_activities
-  #     else:
-  #        return all_activities
-  #     start += limit
-
-  ## 获取所有运动
+  ## 获取所有运动 (Fixed to respect newestNum limit)
   def getAllActivities(self): 
     all_activities = []
     start = 0
+    limit = 100
+    if 0 < self.newestNum < 100:
+      limit = self.newestNum
+    
     while(True):
-      activities = self.getActivities(start=start, limit=100)
+      activities = self.getActivities(start=start, limit=limit)
       if len(activities) > 0:
-         all_activities.extend(activities)
+        all_activities.extend(activities)
+        if self.newestNum > 0 and len(all_activities) >= self.newestNum:
+          return all_activities[:self.newestNum]
       else:
-         return all_activities
-      start += 100
+        return all_activities
+      start += limit
 
-## 下载原始格式的运动
+  ## 下载原始格式的运动 (Fixed to extract FIT from ZIP)
   def downloadFitActivity(self, activity):
     download_fit_activity_url_prefix = GARMIN_URL_DICT["garmin_connect_fit_download"]
     download_fit_activity_url = f"{download_fit_activity_url_prefix}/{activity}"

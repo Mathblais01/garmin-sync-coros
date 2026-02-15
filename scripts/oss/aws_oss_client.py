@@ -2,15 +2,12 @@ import urllib3
 import json
 import boto3
 import certifi
-
 from boto3.s3.transfer import TransferConfig
-
-
 from oss.sts_token_error import StsTokenError
 from utils.coros_oss_credients_utils import decode
 
 class AwsOssClient:
-  def __init__(self, bucket="eu-coros", service="aws", app_id="1660188068672619112", sign="877571111A1EE5316E4B590103D4B5B3", v=2):
+  def __init__(self, bucket="coros-s3", service="aws", app_id="1660188068672619112", sign="877571111A1EE5316E4B590103D4B5B3", v=2):
     self.bucket = bucket
     self.service = service
     self.app_id = app_id
@@ -25,26 +22,34 @@ class AwsOssClient:
   
   def initClient(self):
         sts_token_url = f"https://faq.coros.com/openapi/oss/sts?bucket={self.bucket}&service={self.service}&app_id={self.app_id}&sign={self.sign}&v={self.v}"
-
+        print(f"AWS OSS: Initializing with bucket={self.bucket}")
         response = self.req.request('GET', sts_token_url)
-
         sts_token_response = json.loads(response.data)
         if sts_token_response["code"] != 200:
             raise StsTokenError("Get AWS OSS STS Token Exception")
-
         credentials = sts_token_response["data"]["credentials"]
         v = sts_token_response["data"]["v"]
         self.credentials = credentials
         self.v = v
         credients_json = decode(credentials)
+        
+        # Determine the correct S3 endpoint based on bucket
+        if self.bucket == "eu-coros":
+            endpoint_url = 'https://s3.eu-central-1.amazonaws.com'
+        else:
+            # coros-s3 uses us-east-1 (default AWS region)
+            endpoint_url = 'https://s3.us-east-1.amazonaws.com'
+        
+        print(f"AWS OSS: Using endpoint {endpoint_url}")
+        
         self.client = boto3.client(
             "s3",
             aws_access_key_id=credients_json["AccessKeyId"],
             aws_secret_access_key=credients_json["SecretAccessKey"],
             aws_session_token=credients_json["SessionToken"],
-            endpoint_url='https://s3.eu-central-1.amazonaws.com',
+            endpoint_url=endpoint_url,
         )
-
+        
   def multipart_upload(self, filePath, fileName):
       # 配置上传选项
       config = TransferConfig(
@@ -53,9 +58,9 @@ class AwsOssClient:
           multipart_chunksize=1024 * 1024 * 5,  # 分片大小（5MB）
           use_threads=True                     # 使用多线程
       )
-
       # 执行上传
       try:
+          print(f"AWS OSS: Uploading to bucket={self.bucket}, key=fit_zip/{fileName}")
           self.client.upload_file(
               filePath,
               Bucket=self.bucket,
@@ -65,6 +70,4 @@ class AwsOssClient:
           print(f"File {fileName} uploaded successfully!")
       except Exception as e:
           print(f"Upload failed: {e}")
-
-
-
+          raise e

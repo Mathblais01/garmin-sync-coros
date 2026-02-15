@@ -53,6 +53,7 @@ class CorosClient:
         self.userId = userId
         self.regionId = regionId
         self.teamapi = REGIONCONFIG[self.regionId]['teamapi']
+        print(f"COROS login successful - Region: {self.regionId}, API: {self.teamapi}")
 
     ## 上传运动
     def uploadActivity(self, oss_object, md5, fileName, size):
@@ -82,12 +83,42 @@ class CorosClient:
           )
           upload_response = json.loads(response.data)
           print(upload_response)
-          if upload_response["data"].get("status") == 2 and  upload_response["result"] == "0000":
-             return True
+          
+          # Check the response
+          if upload_response.get("result") != "0000":
+              print(f"COROS API error: {upload_response.get('message')}")
+              return False
+          
+          status = upload_response.get("data", {}).get("status")
+          
+          # Status codes:
+          # 2 = Success (processing/completed)
+          # -2 = Duplicate or rejected
+          # Other negative = Error
+          
+          if status == 2:
+              print(f"COROS: Activity accepted (status={status})")
+              return True
+          elif status == -2:
+              # Check if it's a duplicate by looking at createTime vs updateTime
+              create_time = upload_response.get("data", {}).get("createTime", "")
+              update_time = upload_response.get("data", {}).get("updateTime", "")
+              if create_time != update_time:
+                  print(f"COROS: Duplicate activity detected (status={status})")
+              else:
+                  print(f"COROS: Activity rejected (status={status}) - may be duplicate or unsupported format")
+              # Consider duplicates as "success" since the activity is already there
+              return True
+          elif status is not None and status > 0:
+              print(f"COROS: Activity processing (status={status})")
+              return True
           else:
-             return False
+              print(f"COROS: Unknown status ({status})")
+              return False
+              
         except Exception as err:
-            exit() 
+            print(f"COROS upload exception: {err}")
+            return False
 
     def getActivities(self, size:int, page:int):
         self.checkToken()

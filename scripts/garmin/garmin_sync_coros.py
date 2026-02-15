@@ -1,7 +1,5 @@
 import os
 import sys
-import zipfile
-import shutil
 
 CURRENT_DIR = os.path.split(os.path.abspath(__file__))[0]
 config_path = CURRENT_DIR.rsplit('/', 1)[0]
@@ -11,6 +9,9 @@ from config import DB_DIR, GARMIN_FIT_DIR
 from garmin.garmin_client import GarminClient
 from garmin.garmin_db import GarminDB
 from coros.coros_client import CorosClient
+from oss.ali_oss_client import AliOssClient
+from oss.aws_oss_client import AwsOssClient
+from coros.sts_config import STS_CONFIG
 from utils.md5_utils import calculate_md5_file
 
 SYNC_CONFIG = {
@@ -22,8 +23,6 @@ SYNC_CONFIG = {
     "COROS_PASSWORD": '',
 }
 
-DEBUG_FIT_DIR = os.path.join(os.path.dirname(os.path.dirname(config_path)), 'debug-fit-files')
-
 
 def init(coros_db):
     print(os.path.join(DB_DIR, coros_db.garmin_db_name))
@@ -31,106 +30,6 @@ def init(coros_db):
         coros_db.initDB()
     if not os.path.exists(GARMIN_FIT_DIR):
         os.mkdir(GARMIN_FIT_DIR)
-    if not os.path.exists(DEBUG_FIT_DIR):
-        os.makedirs(DEBUG_FIT_DIR)
-        print(f"Created debug directory: {DEBUG_FIT_DIR}")
-
-
-def extract_fit_from_zip(zip_path):
-    """Extract the .fit file from a zip archive."""
-    try:
-        extract_dir = os.path.dirname(zip_path)
-        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-            fit_files = [f for f in zip_ref.namelist() if f.lower().endswith('.fit')]
-            if fit_files:
-                fit_filename = fit_files[0]
-                zip_ref.extract(fit_filename, extract_dir)
-                extracted_path = os.path.join(extract_dir, fit_filename)
-                
-                base_name = os.path.basename(zip_path).replace('.zip', '.fit')
-                final_path = os.path.join(extract_dir, base_name)
-                
-                if extracted_path != final_path:
-                    if os.path.exists(final_path):
-                        os.remove(final_path)
-                    os.rename(extracted_path, final_path)
-                
-                print(f"Extracted FIT file: {final_path}")
-                return final_path
-            else:
-                print(f"No .fit file found in {zip_path}")
-                return None
-    except Exception as e:
-        print(f"Error extracting FIT file from {zip_path}: {e}")
-        return None
-
-
-def save_and_extract_fit(file_data, activity_id, garmin_fit_dir):
-    """Save downloaded data and extract FIT file."""
-    if not file_data or len(file_data) == 0:
-        print(f"Activity {activity_id}: No data received from Garmin")
-        return None
-    
-    print(f"Activity {activity_id}: Downloaded {len(file_data)} bytes")
-    
-    if len(file_data) < 10:
-        print(f"Activity {activity_id}: Data too small")
-        return None
-    
-    # Check if it's a ZIP file (starts with PK)
-    if file_data[:2] == b'PK':
-        print(f"Activity {activity_id}: Received ZIP file")
-        zip_path = os.path.join(garmin_fit_dir, f"{activity_id}.zip")
-        with open(zip_path, "wb") as fb:
-            fb.write(file_data)
-        
-        fit_path = extract_fit_from_zip(zip_path)
-        
-        try:
-            os.remove(zip_path)
-        except:
-            pass
-        
-        return fit_path
-    
-    # Check if it's already a FIT file
-    elif len(file_data) > 12 and file_data[8:12] == b'.FIT':
-        print(f"Activity {activity_id}: Received raw FIT file")
-        fit_path = os.path.join(garmin_fit_dir, f"{activity_id}.fit")
-        with open(fit_path, "wb") as fb:
-            fb.write(file_data)
-        return fit_path
-    
-    # Check if it's an HTML error page
-    elif file_data[:5] == b'<!DOC' or file_data[:5] == b'<html' or file_data[:1] == b'<':
-        print(f"Activity {activity_id}: Received HTML error page")
-        return None
-    
-    # Unknown format - try saving as FIT
-    else:
-        print(f"Activity {activity_id}: Unknown format, saving as FIT")
-        fit_path = os.path.join(garmin_fit_dir, f"{activity_id}.fit")
-        with open(fit_path, "wb") as fb:
-            fb.write(file_data)
-        return fit_path
-
-
-def validate_fit_file(fit_path):
-    """Basic validation of FIT file structure."""
-    try:
-        with open(fit_path, 'rb') as f:
-            header = f.read(14)
-            if len(header) < 12:
-                return False
-            if header[8:12] == b'.FIT':
-                print(f"FIT validation: Valid")
-                return True
-            else:
-                print(f"FIT validation: Invalid signature")
-                return False
-    except Exception as e:
-        print(f"FIT validation error: {e}")
-        return False
 
 
 if __name__ == "__main__":
@@ -138,105 +37,122 @@ if __name__ == "__main__":
     for k in SYNC_CONFIG:
         if os.getenv(k):
             SYNC_CONFIG[k] = os.getenv(k)
-    
+
     db_name = "garmin.db"
     garmin_db = GarminDB(db_name)
     init(garmin_db)
-    
+
     GARMIN_EMAIL = SYNC_CONFIG["GARMIN_EMAIL"]
     GARMIN_PASSWORD = SYNC_CONFIG["GARMIN_PASSWORD"]
     GARMIN_AUTH_DOMAIN = SYNC_CONFIG["GARMIN_AUTH_DOMAIN"]
     GARMIN_NEWEST_NUM = SYNC_CONFIG["GARMIN_NEWEST_NUM"]
-    
+
     garminClient = GarminClient(GARMIN_EMAIL, GARMIN_PASSWORD, GARMIN_AUTH_DOMAIN, GARMIN_NEWEST_NUM)
-    
+
     COROS_EMAIL = SYNC_CONFIG["COROS_EMAIL"]
     COROS_PASSWORD = SYNC_CONFIG["COROS_PASSWORD"]
     corosClient = CorosClient(COROS_EMAIL, COROS_PASSWORD)
     corosClient.login()
-    
+
     print(f"\nFetching activities (limit: {GARMIN_NEWEST_NUM})...")
     all_activities = garminClient.getAllActivities()
-    
-    if not all_activities:
+
+    if all_activities is None or len(all_activities) == 0:
         print("No activities found")
         exit()
-    
+
     print(f"Found {len(all_activities)} activities")
-    
+
     for activity in all_activities:
         activity_id = activity["activityId"]
         garmin_db.saveActivity(activity_id)
-    
+
     un_sync_id_list = garmin_db.getUnSyncActivity()
-    if not un_sync_id_list:
+    if un_sync_id_list is None or len(un_sync_id_list) == 0:
         print("No activities to sync")
         exit()
-    
+
     print(f"Activities to sync: {len(un_sync_id_list)}")
     file_path_list = []
-    
-    # Download activities from Garmin
+
+    # Step 1: Download activities from Garmin as ZIP files
     for un_sync_id in un_sync_id_list:
         try:
             print(f"\n--- Downloading activity {un_sync_id} ---")
-            file_data = garminClient.downloadFitActivity(un_sync_id)
-            fit_path = save_and_extract_fit(file_data, un_sync_id, GARMIN_FIT_DIR)
-            
-            if fit_path and os.path.exists(fit_path):
-                is_valid = validate_fit_file(fit_path)
-                
-                # Save debug copy
-                debug_copy = os.path.join(DEBUG_FIT_DIR, os.path.basename(fit_path))
-                shutil.copy2(fit_path, debug_copy)
-                
-                file_path_list.append({
-                    "un_sync_id": un_sync_id,
-                    "file_path": fit_path,
-                    "is_valid": is_valid
-                })
-                print(f"Activity {un_sync_id}: Ready ({os.path.getsize(fit_path)} bytes)")
-            else:
-                print(f"Activity {un_sync_id}: Failed to download")
-                garmin_db.updateExceptionSyncStatus(un_sync_id)
-                
+            file = garminClient.downloadFitActivity(un_sync_id)
+            # Save as ZIP (this is how Garmin delivers it)
+            file_path = os.path.join(GARMIN_FIT_DIR, f"{un_sync_id}.zip")
+            with open(file_path, "wb") as fb:
+                fb.write(file)
+            print(f"Activity {un_sync_id}: Downloaded {len(file)} bytes -> {file_path}")
+            file_path_list.append({
+                "un_sync_id": un_sync_id,
+                "file_path": file_path
+            })
         except Exception as err:
-            print(f"Activity {un_sync_id}: Error - {err}")
+            print(f"Activity {un_sync_id}: Download error - {err}")
             garmin_db.updateExceptionSyncStatus(un_sync_id)
 
-    # Upload activities to COROS using DIRECT UPLOAD
+    # Step 2: Upload to cloud storage (S3/OSS) then register with COROS
     print(f"\n{'='*50}")
-    print(f"Uploading {len(file_path_list)} activities to COROS (DIRECT UPLOAD)")
+    print(f"Uploading {len(file_path_list)} activities to COROS via S3/OSS")
     print(f"{'='*50}")
-    
-    for info in file_path_list:
-        un_sync_id = info["un_sync_id"]
-        file_path = info["file_path"]
-        
+
+    # Get the STS config for the user's region
+    region_id = corosClient.regionId
+    sts_cfg = STS_CONFIG.get(region_id, STS_CONFIG.get(1))
+    print(f"Region: {region_id}, Bucket: {sts_cfg['bucket']}, Service: {sts_cfg['service']}")
+
+    for un_sync_info in file_path_list:
         try:
+            file_path = un_sync_info["file_path"]
+            un_sync_id = un_sync_info["un_sync_id"]
+
             print(f"\n--- Uploading activity {un_sync_id} ---")
-            
-            # Use direct upload (bypasses S3)
-            success = corosClient.directUploadFit(file_path)
-            
-            if success:
+
+            # Initialize the appropriate cloud storage client
+            if region_id == 2:
+                # China region -> Alibaba Cloud OSS
+                client = AliOssClient(
+                    bucket=sts_cfg['bucket'],
+                    service=sts_cfg['service']
+                )
+            else:
+                # International (region 1 or 3) -> AWS S3
+                client = AwsOssClient(
+                    bucket=sts_cfg['bucket'],
+                    service=sts_cfg['service']
+                )
+
+            # Upload ZIP file to cloud storage
+            file_md5 = calculate_md5_file(file_path)
+            oss_key = f"{corosClient.userId}/{file_md5}.zip"
+            print(f"Uploading to cloud storage: fit_zip/{oss_key}")
+            client.multipart_upload(file_path, oss_key)
+
+            # Tell COROS about the uploaded file
+            size = os.path.getsize(file_path)
+            full_oss_path = f"fit_zip/{corosClient.userId}/{file_md5}.zip"
+            print(f"Registering with COROS: {full_oss_path} ({size} bytes)")
+
+            upload_result = corosClient.uploadActivity(
+                full_oss_path,
+                file_md5,
+                f"{un_sync_id}.zip",
+                size
+            )
+
+            if upload_result:
                 garmin_db.updateSyncStatus(un_sync_id)
                 print(f"Activity {un_sync_id}: SYNC COMPLETE!")
             else:
-                print(f"Activity {un_sync_id}: Upload failed")
+                print(f"Activity {un_sync_id}: COROS rejected the upload")
                 garmin_db.updateExceptionSyncStatus(un_sync_id)
-                
+
         except Exception as err:
             print(f"Activity {un_sync_id}: Error - {err}")
             garmin_db.updateExceptionSyncStatus(un_sync_id)
 
-    # Summary
     print(f"\n{'='*50}")
-    print("SYNC SUMMARY")
+    print("SYNC COMPLETE")
     print(f"{'='*50}")
-    print(f"Debug FIT files saved to: {DEBUG_FIT_DIR}")
-    if os.path.exists(DEBUG_FIT_DIR):
-        for f in os.listdir(DEBUG_FIT_DIR):
-            fpath = os.path.join(DEBUG_FIT_DIR, f)
-            print(f"  {f}: {os.path.getsize(fpath)} bytes")
-    print("\nSync process complete!")

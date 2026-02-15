@@ -1,6 +1,7 @@
 import os
 import sys
 import zipfile
+import shutil
 CURRENT_DIR = os.path.split(os.path.abspath(__file__))[0]  # 当前目录
 config_path = CURRENT_DIR.rsplit('/', 1)[0]  # 上三级目录
 sys.path.append(config_path)
@@ -21,6 +22,9 @@ SYNC_CONFIG = {
     "COROS_PASSWORD": '',
 }
 
+# Directory to save FIT files for debugging (in repo root)
+DEBUG_FIT_DIR = os.path.join(os.path.dirname(os.path.dirname(config_path)), 'debug-fit-files')
+
 def init(coros_db):
     ## 判断RQ数据库是否存在
     print(os.path.join(DB_DIR, coros_db.garmin_db_name))
@@ -29,6 +33,10 @@ def init(coros_db):
         coros_db.initDB()
     if not os.path.exists(GARMIN_FIT_DIR):
         os.mkdir(GARMIN_FIT_DIR)
+    # Create debug directory for saving FIT files
+    if not os.path.exists(DEBUG_FIT_DIR):
+        os.makedirs(DEBUG_FIT_DIR)
+        print(f"Created debug directory: {DEBUG_FIT_DIR}")
 
 def extract_fit_from_zip(zip_path):
     """
@@ -125,6 +133,31 @@ def save_and_extract_fit(file_data, activity_id, garmin_fit_dir):
         print(f"Activity {activity_id}: Saved as FIT file: {fit_path}")
         return fit_path
 
+def validate_fit_file(fit_path):
+    """
+    Basic validation of FIT file structure.
+    Returns True if file appears to be valid FIT format.
+    """
+    try:
+        with open(fit_path, 'rb') as f:
+            header = f.read(14)
+            
+            if len(header) < 12:
+                print(f"FIT validation: File too small")
+                return False
+            
+            # Check for .FIT signature at bytes 8-11
+            if header[8:12] == b'.FIT':
+                print(f"FIT validation: Valid FIT signature found")
+                return True
+            else:
+                print(f"FIT validation: No .FIT signature, got: {header[8:12]}")
+                print(f"FIT validation: Full header (hex): {header.hex()}")
+                return False
+    except Exception as e:
+        print(f"FIT validation error: {e}")
+        return False
+
 
 if __name__ == "__main__":
     # 首先读取 面板变量 或者 github action 运行变量
@@ -181,12 +214,21 @@ if __name__ == "__main__":
             fit_path = save_and_extract_fit(file_data, un_sync_id, GARMIN_FIT_DIR)
             
             if fit_path and os.path.exists(fit_path):
+                # Validate FIT file
+                is_valid = validate_fit_file(fit_path)
+                
+                # Save a copy to debug directory for inspection
+                debug_copy_path = os.path.join(DEBUG_FIT_DIR, os.path.basename(fit_path))
+                shutil.copy2(fit_path, debug_copy_path)
+                print(f"Activity {un_sync_id}: Saved debug copy to {debug_copy_path}")
+                
                 un_sync_info = {
                     "un_sync_id": un_sync_id,
-                    "file_path": fit_path
+                    "file_path": fit_path,
+                    "is_valid": is_valid
                 }
                 file_path_list.append(un_sync_info)
-                print(f"Activity {un_sync_id}: Ready for upload ({os.path.getsize(fit_path)} bytes)")
+                print(f"Activity {un_sync_id}: Ready for upload ({os.path.getsize(fit_path)} bytes, valid={is_valid})")
             else:
                 print(f"Activity {un_sync_id}: Failed to process")
                 garmin_db.updateExceptionSyncStatus(un_sync_id)
@@ -231,15 +273,24 @@ if __name__ == "__main__":
             if upload_result:
                 garmin_db.updateSyncStatus(un_sync_id)
                 print(f"Activity {un_sync_id}: Sync complete!")
+            else:
+                print(f"Activity {un_sync_id}: COROS rejected the file (check debug-fit-files folder)")
                 
-            # Clean up the fit file after upload
-            try:
-                os.remove(file_path)
-            except:
-                pass
+            # Don't clean up the fit file - keep for debugging
+            # try:
+            #     os.remove(file_path)
+            # except:
+            #     pass
                 
         except Exception as err:
             print(f"Activity {un_sync_id}: Upload error - {err}")
             garmin_db.updateExceptionSyncStatus(un_sync_id)
+
+    # List files in debug directory
+    print(f"\n=== Debug FIT files saved to: {DEBUG_FIT_DIR} ===")
+    if os.path.exists(DEBUG_FIT_DIR):
+        for f in os.listdir(DEBUG_FIT_DIR):
+            fpath = os.path.join(DEBUG_FIT_DIR, f)
+            print(f"  {f}: {os.path.getsize(fpath)} bytes")
 
     print("\nSync process complete!")

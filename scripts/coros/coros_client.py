@@ -82,7 +82,7 @@ class CorosClient:
         try:
             data = {
                 "source": 1,
-                "timezone": -136,
+                "timezone": -20,
                 "bucket": bucket,
                 "md5": md5,
                 "size": size,

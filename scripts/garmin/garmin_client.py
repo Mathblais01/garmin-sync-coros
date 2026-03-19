@@ -10,6 +10,9 @@ from .garmin_url_dict import GARMIN_URL_DICT
 
 logger = logging.getLogger(__name__)
 
+# Token storage directory (persisted via git commit in workflow)
+TOKEN_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), '.garth')
+
 
 class GarminClient:
   def __init__(self, email, password, auth_domain, newest_num):
@@ -23,20 +26,58 @@ class GarminClient:
             "origin": GARMIN_URL_DICT.get("SSO_URL_ORIGIN"),
             "nk": "NT"
         }
-  
-  ## 登录装饰器
+
+        # Configure domain if China region
+        if self.auth_domain and str(self.auth_domain).upper() == "CN":
+            self.garthClient.configure(domain="garmin.cn")
+
+        # Try to resume saved session first
+        self._try_resume_token()
+
+  def _try_resume_token(self):
+        """Try to resume a previously saved garth token."""
+        try:
+            if os.path.exists(TOKEN_DIR):
+                self.garthClient.resume(TOKEN_DIR)
+                # Verify the token still works
+                garth.client.username
+                print("Garmin: Resumed saved session successfully")
+                return True
+        except Exception as e:
+            print(f"Garmin: Saved session expired or invalid ({e})")
+        return False
+
+  def _save_token(self):
+        """Save the current garth token for future use."""
+        try:
+            os.makedirs(TOKEN_DIR, exist_ok=True)
+            self.garthClient.save(TOKEN_DIR)
+            print(f"Garmin: Session token saved to {TOKEN_DIR}")
+        except Exception as e:
+            print(f"Garmin: Failed to save token ({e})")
+
+  ## Login decorator
   def login(func):    
     def ware(self, *args, **kwargs):    
       try:
          garth.client.username
       except Exception:
         logger.warning("Garmin is not logging in or the token has expired.")
+
+        # Try resuming saved token first
+        if self._try_resume_token():
+            return func(self, *args, **kwargs)
+
+        # Fresh login required
+        print("Garmin: Performing fresh login...")
         if self.auth_domain and str(self.auth_domain).upper() == "CN":
           self.garthClient.configure(domain="garmin.cn")
         self.garthClient.login(self.email, self.password)
         
-        # del self.garthClient.sess.headers['User-Agent']
         del self.garthClient.client.sess.headers['User-Agent']
+
+        # Save token for future runs
+        self._save_token()
 
       return func(self, *args, **kwargs)
     return ware
@@ -50,14 +91,14 @@ class GarminClient:
       return self.garthClient.connectapi(path, **kwargs)
      
 
-  ## 获取运动
+  ## Get activities
   def getActivities(self, start:int, limit:int):
      
      params = {"start": str(start), "limit": str(limit)}
      activities =  self.connectapi(path=GARMIN_URL_DICT["garmin_connect_activities"], params=params)
      return activities;
 
-  ## 获取所有运动 (Fixed to respect newestNum limit)
+  ## Get all activities (respects newestNum limit)
   def getAllActivities(self): 
     all_activities = []
     start = 0
@@ -75,7 +116,7 @@ class GarminClient:
         return all_activities
       start += limit
 
-  ## 下载原始格式的运动
+  ## Download FIT activity
   def downloadFitActivity(self, activity):
     download_fit_activity_url_prefix = GARMIN_URL_DICT["garmin_connect_fit_download"]
     download_fit_activity_url = f"{download_fit_activity_url_prefix}/{activity}"
@@ -85,7 +126,6 @@ class GarminClient:
   @login  
   def upload_activity(self, activity_path: str):
     """Upload activity in fit format from file."""
-    # This code is borrowed from python-garminconnect-enhanced ;-)
     file_base_name = os.path.basename(activity_path)
     file_extension = file_base_name.split(".")[-1]
     allowed_file_extension = (

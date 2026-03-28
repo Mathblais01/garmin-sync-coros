@@ -2,11 +2,44 @@ import urllib3
 import json
 import hashlib
 import os
+from datetime import datetime
 
 import certifi
 
 from coros.region_config import REGIONCONFIG
 from coros.sts_config import STS_CONFIG
+
+
+def get_coros_timezone():
+    """
+    Calculate COROS timezone value based on current UTC offset for America/Montreal.
+    Automatically handles DST changes.
+    
+    Based on observed mapping:
+      UTC-5 (EST) = -20
+      UTC-4 (EDT) = -16
+      => each hour = 4 units, formula: offset_hours * 4
+    """
+    try:
+        from zoneinfo import ZoneInfo
+        now = datetime.now(ZoneInfo("America/Montreal"))
+        utc_offset_seconds = now.utcoffset().total_seconds()
+    except ImportError:
+        # Fallback: use pytz if zoneinfo not available
+        try:
+            import pytz
+            tz = pytz.timezone("America/Montreal")
+            now = datetime.now(tz)
+            utc_offset_seconds = now.utcoffset().total_seconds()
+        except ImportError:
+            # Last resort: assume EST (-5)
+            print("COROS timezone: No timezone library available, defaulting to EST (UTC-5)")
+            return -20
+
+    utc_offset_hours = utc_offset_seconds / 3600
+    coros_tz = int(utc_offset_hours * 4)
+    print(f"COROS timezone: UTC offset={utc_offset_hours}h, value={coros_tz}")
+    return coros_tz
 
 
 class CorosClient:
@@ -57,7 +90,7 @@ class CorosClient:
         """
         Register an uploaded file with COROS.
         The file must already be uploaded to S3/OSS before calling this.
-        
+
         Args:
             oss_object: The S3/OSS object path (e.g., "fit_zip/userId/md5.zip")
             md5: MD5 hash of the file
@@ -82,7 +115,7 @@ class CorosClient:
         try:
             data = {
                 "source": 1,
-                "timezone": -20,
+                "timezone": get_coros_timezone(),
                 "bucket": bucket,
                 "md5": md5,
                 "size": size,

@@ -82,13 +82,12 @@ if __name__ == "__main__":
     print(f"Found {len(activities)} activities")
 
     # Check which ones need syncing
-    to_sync = []
     for activity in activities:
         act_id = activity.get("id", "")
         act_type = activity.get("type", "unknown")
         act_name = activity.get("name", "N/A")
         act_date = activity.get("start_date_local", "")[:10]
-        
+
         print(f"  {act_id}: type={act_type}, date={act_date}, name={act_name}")
 
         # Use the intervals.icu ID as our tracking key
@@ -96,7 +95,7 @@ if __name__ == "__main__":
         sync_key = f"icu_{act_id}"
         garmin_db.saveActivity(sync_key)
 
-    un_sync_id_list = garmin_db.getUnSyncActivity()
+    un_sync_id_list = garmin_db.getUnSyncActivity() or []
     # Filter to only intervals.icu activities
     un_sync_id_list = [sid for sid in un_sync_id_list if str(sid).startswith("icu_")]
 

@@ -2,7 +2,7 @@ name: mywhoosh-sync-coros
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 1,13,16,22 * * *'
+    - cron: '20 1,13,16,22 * * *'
 env:
   GITHUB_NAME: Mathblais01
   GITHUB_EMAIL: mathblais01@gmail.com

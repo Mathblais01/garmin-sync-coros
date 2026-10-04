@@ -39,6 +39,7 @@ jobs:
         run: |
           python scripts/mywhoosh/mywhoosh_sync_coros.py
       - name: Push updates
+        if: always()
         run: |
           git config --local user.email "${{ env.GITHUB_EMAIL }}"
           git config --local user.name "${{ env.GITHUB_NAME }}"

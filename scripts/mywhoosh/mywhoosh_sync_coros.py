@@ -113,6 +113,7 @@ if __name__ == "__main__":
     print(f"Syncing activities: MyWhoosh -> COROS")
     print(f"{'='*50}")
 
+    failures = 0
     for sync_key in un_sync_id_list:
         # Extract the MyWhoosh activity id
         mw_id = sync_key.replace("mw_", "")
@@ -126,21 +127,21 @@ if __name__ == "__main__":
                 # stale unsynced row from an activity outside the current
                 # lookback window) — skip rather than guess at its data.
                 print(f"  Activity not in current fetch window, skipping")
-                garmin_db.updateExceptionSyncStatus(sync_key)
+                garmin_db.updateExceptionSyncStatus(sync_key); failures += 1
                 continue
 
             # Step 1: Download FIT file from MyWhoosh (saved as ZIP)
             zip_path = mywhooshClient.downloadFitFile(activity, GARMIN_FIT_DIR)
             if not zip_path or not os.path.exists(zip_path):
                 print(f"  Failed to download")
-                garmin_db.updateExceptionSyncStatus(sync_key)
+                garmin_db.updateExceptionSyncStatus(sync_key); failures += 1
                 continue
 
             # Step 2: Upload to cloud storage (S3/OSS)
             if region_id == 2:
                 client = AliOssClient(bucket=sts_cfg['bucket'], service=sts_cfg['service'])
             else:
-                client = AwsOssClient(bucket=sts_cfg['bucket'], service=sts_cfg['service'])
+                client = AwsOssClient(bucket=sts_cfg['bucket'], service=sts_cfg['service'], access_token=corosClient.accessToken)
 
             file_md5 = calculate_md5_file(zip_path)
             oss_key = f"{corosClient.userId}/{file_md5}.zip"
@@ -163,12 +164,16 @@ if __name__ == "__main__":
                 print(f"  SYNC COMPLETE!")
             else:
                 print(f"  COROS rejected the upload")
-                garmin_db.updateExceptionSyncStatus(sync_key)
+                garmin_db.updateExceptionSyncStatus(sync_key); failures += 1
 
         except Exception as err:
             print(f"  Error: {err}")
-            garmin_db.updateExceptionSyncStatus(sync_key)
+            garmin_db.updateExceptionSyncStatus(sync_key); failures += 1
 
     print(f"\n{'='*50}")
     print("SYNC COMPLETE")
     print(f"{'='*50}")
+
+    if failures:
+        print(f"{failures} activity upload(s) FAILED - marking run as failed")
+        sys.exit(1)

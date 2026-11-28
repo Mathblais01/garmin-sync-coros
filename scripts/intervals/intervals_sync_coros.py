@@ -26,7 +26,10 @@ SYNC_CONFIG = {
 # To sync ALL activity types, use this line:
 # ALLOWED_TYPES = None
 # To sync ONLY cycling, uncomment this line:
-ALLOWED_TYPES = ["Ride", "VirtualRide"]
+# 2026-11-28: VirtualRide removed. MyWhoosh rides are already uploaded to COROS by the
+# mywhoosh-sync-coros workflow (as "Indoor Bike"); syncing them here too created a duplicate
+# "Road Bike" copy in COROS for every indoor ride since 2026-08-10. Outdoor rides only here.
+ALLOWED_TYPES = ["Ride"]
 
 
 def init():
